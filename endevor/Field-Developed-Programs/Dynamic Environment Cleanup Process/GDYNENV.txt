@@ -1,0 +1,188 @@
+//*-------------------------------------------------------------------*
+//* GDYNENV: ENDEVOR GENERATE PROCESSOR FOR DYNAMIC ENVIRONMENTS      *
+//*    DEFINES A NEW DYNAMIC ENVIRONMENT BASED ON THE ELEMENT         *
+//*    NAME, CLONING A SAMPLE ENVIRONMENT INCLUDING SYSTEMS,          *
+//*    SUBSYSTEMS, TYPES AND PROCESSOR GROUPS.                        *
+//*                                                                   *
+//* Requirements:                                                     *
+//* 1) DYNAMIC ENVIRONMENTS must be enabled:                          *
+//*    A) Create the Global Control File (GCF). See CSIQJCL(BC1JJB08).*
+//*    B) Update C1DEFLTS, with GCFDSN= parm set to the new GCF file. *
+//* 2) Deffered File Creation (DFC) must be enabled (C1DEFLTS) and the*
+//*    DFC parmlib member must support the new DYNENV datasets.       *
+//* 3) ENCOPTBL, the following options are required:                  *
+//*       ENHOPT CD18105_ADMIN_ACT_IN_PROCESSOR=ON                    *
+//*       ENHOPT INTRDR_ALTID=ON                                      *
+//* 4) Processor / Dataset naming conventions. The Environment name   *
+//*    MUST be a node in the datasets created by DFC. For example-    *
+//*         PFX='NDV.&C1EN..&C1SU..&C1EN(1,1)&C1S#.'                  *
+//*-------------------------------------------------------------------*
+//GDYNENV PROC AAA=,
+//        PFX='Your.Endevor',
+//        MCF1='&PFX..&C1ELEMENT..DEV1.MCF',
+//        MCF2='&PFX..&C1ELEMENT..DEV2.MCF',
+//        LISTLIB='&PFX..&C1EN..&C1SU..D1.LISTLIB',
+//        LIKEENV='DEV',
+//        WRKUNIT=SYSDA,
+//        ZZZ=
+//*
+//**********************************************************
+//*  ALLOCATE THE OUTPUT LISTING DATASETS
+//**********************************************************
+//INITLIST EXEC PGM=BC1PDSIN
+//C1INIT01 DD DSN=&&IDMSGS,DISP=(,PASS),
+//             SPACE=(TRK,(1,1)),
+//             DCB=(RECFM=FBA,LRECL=133,BLKSIZE=26600,DSORG=PS)
+//C1INIT02 DD DSN=&&BAMSG1,DISP=(,PASS),
+//             SPACE=(CYL,(5,5)),
+//             DCB=(RECFM=FBA,LRECL=133,BLKSIZE=26600,DSORG=PS)
+//C1INIT03 DD DSN=&&BAMSG2,DISP=(,PASS),
+//             SPACE=(TRK,(1,1)),
+//             DCB=(RECFM=FBA,LRECL=133,BLKSIZE=26600,DSORG=PS)
+//C1INIT04 DD DSN=&&ERRMSG,DISP=(,PASS),
+//             SPACE=(TRK,(1,1)),
+//             DCB=(RECFM=FB,LRECL=80,BLKSIZE=0,DSORG=PS)
+//*
+//*-------------------------------------------------------------------*
+//* Check to see if the DYNENV already exists- fail if found
+//* RC=0 means DYNENV exist    RC=4 means no it doesn't
+//*-------------------------------------------------------------------*
+//TEST     EXEC PGM=CONAPI,PARM='BC1PCSV0'
+//STEPLIB  DD DISP=SHR,DSN=Your.EndevorSCM.R19.CSIQAUTU
+//         DD DISP=SHR,DSN=Your.EndevorSCM.R19.CSIQAUTH
+//         DD DISP=SHR,DSN=Your.EndevorSCM.R19.CSIQLOAD
+//TABLE    DD SYSOUT=*,DCB=(RECFM=FB,LRECL=1800,BLKSIZE=9000,DSORG=PS)
+//CSVIPT01 DD *
+    LIST ENVIRONMENT '&C1ELEMENT'
+     TO DDNAME 'TABLE'
+     OPTIONS   RETURN ALL .
+//*
+//**********************************************************
+//*  IF ENVIRONMENT ALREADY EXISTS (PREV STEP RC 0) THEN
+//*  SET ERROR CODE/MESSAGE AND EXIT
+//**********************************************************
+//IFEXIST IF (TEST.RC EQ 4) THEN
+//*
+//**********************************************************
+//*  ALLOCATE THE MCF FILES FOR THE NEW ENVIRONMENT
+//**********************************************************
+//MCF      EXEC PGM=IDCAMS
+//SYSPRINT DD DSN=&&IDMSGS,DISP=(OLD,PASS)
+//SYSIN    DD *
+ /*--------------------------------------------------*/
+ /* DEFINE MCF AT STG1                               */
+ /*--------------------------------------------------*/
+ DEFINE CLUSTER (NAME('&MCF1') -
+    IMBED  SPEED  UNIQUE  FREESPACE(30 30) -
+    CYLINDERS(1 1)  STORAGECLASS(TSO) -
+ /* VOLUME(??????) */ -
+    RECORDSIZE(640 1200)  KEYS(28 0)  SHR(3 3)) -
+  DATA  (NAME('&MCF1..DATA')   CISZ(8192)) -
+  INDEX (NAME('&MCF1..INDEX')  CISZ(2048))
+ /*--------------------------------------------------*/
+ /* DEFINE MCF AT STG2                               */
+ /*--------------------------------------------------*/
+ DEFINE CLUSTER (NAME('&MCF2') -
+    IMBED  SPEED  UNIQUE  FREESPACE(30 30) -
+    CYLINDERS(25 25)  STORAGECLASS(TSO) -
+ /* VOLUME(??????)     */ -
+ /* RECORDS(1000 1000) */  -
+    RECORDSIZE(640 1200)  KEYS(28 0)  SHR(3 3)) -
+  DATA  (NAME('&MCF2..DATA')   CISZ(8192)) -
+  INDEX (NAME('&MCF2..INDEX')  CISZ(2048))
+/*
+//**********************************************************
+//*  CLONE ALL SYSTEMS, SUBSYSTEMS, TYPES AND PROCESSOR GROUPS
+//*  FROM THE 'LIKE' ENVIRONMENT
+//**********************************************************
+//ADMIN    EXEC PGM=ENBE1000,ALTID=Y,
+//         PARM='MSGS1(BAMSG1),MSGS2(BAMSG2),SCLIN(BASCL)'
+//BAMSG1   DD DSN=&&BAMSG1,DISP=(OLD,PASS)
+//BAMSG2   DD DSN=&&BAMSG2,DISP=(OLD,PASS)
+//BASCL    DD *
+ DEFINE ENVIRONMENT '&C1ELEMENT'
+   TITLE 'DYNAMIC DEV ENVIRONMENT &C1ELEMENT'
+   LIKE '&LIKEENV'
+   STAGE ONE MCF '&MCF1'
+   STAGE TWO MCF '&MCF2' .
+ CLONE SYSTEM *
+   FROM ENVIRONMENT '&LIKEENV'
+   TO   ENVIRONMENT '&C1ELEMENT'
+   INCLUDE SUBSYSTEMS
+   INCLUDE TYPES .
+//*
+//********ELSE the DYNENV exits / fail
+//IFEXIST ELSE
+//**********************************************************
+//*  SET ERROR CODE
+//**********************************************************
+//SETMAXCC EXEC PGM=IDCAMS,MAXRC=4
+//SYSPRINT DD DSN=&&IDMSGS,DISP=(OLD,PASS)
+//SYSIN    DD *
+  SET MAXCC = 12
+/*
+//**********************************************************
+//*  SET ERROR MESSAGE
+//**********************************************************
+//ERRORMSG EXEC PGM=C1PRMGEN,
+// PARM='**ERROR** Environment &C1ELEMENT already exists'
+//PARMOUT  DD DSN=&&ERRMSG,DISP=(OLD,PASS)
+//IFEXIST ENDIF
+//*
+//**********************************************************
+//*  SAVE ALL STEP OUTPUTS INTO THE LISTING
+//**********************************************************
+//CONLIST  EXEC PGM=CONLIST,PARM=STORE,MAXRC=0,COND=EVEN
+//C1LLIBO  DD DSN=&LISTLIB,
+//            DISP=OLD,MONITOR=COMPONENTS,FOOTPRNT=CREATE
+//C1BANNER DD UNIT=&WRKUNIT,SPACE=(TRK,(1,1)),
+//            DCB=(RECFM=FBA,LRECL=121,BLKSIZE=6171,DSORG=PS)
+//IFGOOD IF (TEST.RC EQ 4) THEN
+//LIST01   DD *
+****************************************************************
+*  E N D E V O R   &C1AMM./&C1ADD./&C1AYYYY  &C1AHH.:&C1ATMM.:&C1ASS
+*  IDCAMS MCF create results
+****************************************************************
+/*
+//LIST02   DD DSN=&&IDMSGS,DISP=(OLD,DELETE),FREE=CLOSE
+//LIST03   DD *
+****************************************************************
+*  E N D E V O R   &C1AMM./&C1ADD./&C1AYYYY  &C1AHH.:&C1ATMM.:&C1ASS
+*  Batch Admin MSGS1 (detail)
+****************************************************************
+/*
+//LIST04   DD DSN=&&BAMSG1,DISP=(OLD,DELETE),FREE=CLOSE
+//LIST05   DD *
+****************************************************************
+*  E N D E V O R   &C1AMM./&C1ADD./&C1AYYYY  &C1AHH.:&C1ATMM.:&C1ASS
+*  Batch Admin MSGS2 (summary)
+****************************************************************
+/*
+//LIST06   DD DSN=&&BAMSG2,DISP=(OLD,DELETE),FREE=CLOSE
+//IFGOOD ELSE
+//LIST01   DD *
+****************************************************************
+*  E N D E V O R   &C1AMM./&C1ADD./&C1AYYYY  &C1AHH.:&C1ATMM.:&C1ASS
+*  DYNENV already exists! Fail
+****************************************************************
+/*
+//LIST02   DD DSN=&&ERRMSG,DISP=(OLD,PASS)
+//IFGOOD  ENDIF
+//*
+//**********************************************************
+//*  IF ERROR, ALSO PRINT OUTPUT
+//**********************************************************
+//IFFAIL2 IF (TEST.RC EQ 4) THEN
+//CONLIST2 EXEC PGM=CONLIST,PARM=PRINT,MAXRC=0,COND=EVEN
+//C1PRINT  DD SYSOUT=*,DCB=(RECFM=FBA,LRECL=121,BLKSIZE=6171)
+//C1BANNER DD UNIT=&WRKUNIT,SPACE=(TRK,(1,1)),
+//            DCB=(RECFM=FBA,LRECL=121,BLKSIZE=6171,DSORG=PS)
+//LIST01   DD *
+****************************************************************
+*  E N D E V O R   &C1AMM./&C1ADD./&C1AYYYY  &C1AHH.:&C1ATMM.:&C1ASS
+*  DYNENV already exists! Fail
+****************************************************************
+/*
+//LIST02   DD DSN=&&ERRMSG,DISP=(OLD,DELETE),FREE=CLOSE
+//IFFAIL2 ENDIF
+//*

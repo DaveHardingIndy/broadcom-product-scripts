@@ -1,0 +1,30 @@
+/* REXX */
+/* CONVERT YYYYMMDD (ENDEVOR) DATE TO YYYYDDD (JULIAN) FORMAT */
+'execio * diskr FILEIN (stem TABLE.'
+do # = 1 to TABLE.0
+  A        = TABLE.#
+  ENV      = substr(A,15,8)
+  ENV      = left(ENV,8,' ')
+  SYS      = substr(A,23,8)
+  SYS      = left(SYS,8,' ')
+  SUB      = substr(A,31,8)
+  SUB      = left(SUB,8,' ')
+  ELE      = substr(A,39,8)
+  ELE      = left(ELE,8,' ')
+  TYP      = substr(A,49,8)
+  TYP      = left(TYP,8,' ')
+  STG      = substr(A,66,1)
+  USERID   = substr(A,148,7)
+  DATELAST = substr(A,132,8)
+/*check for comments / non-dates - keep these lines */
+  if DATELAST < 0 then do
+    iterate
+  end
+  else do
+    DDD      = RIGHT(DATE('D',DATELAST,'S'),3,'0')
+    DATEJUL  = SUBSTR(DATELAST,1,4)||DDD
+    TABLE.# = ENV SYS SUB TYP ELE DATEJUL USERID STG
+    queue TABLE.#
+  end
+end
+'execio * diskw FILEOUT ( finis'

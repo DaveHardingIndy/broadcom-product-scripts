@@ -1,0 +1,35 @@
+/* REXX   Build ARCHIVE SCL for DYNENV purge process */
+
+'execio * diskr PURGELST (stem TABLE.'
+do # = 1 to TABLE.0
+  P    = TABLE.#
+  PENV = substr(P,1,8)
+  PSYS = substr(P,10,8)
+  PSUB = substr(P,19,8)
+  PSTG = substr(P,28,1)
+
+  'execio * diskr FILEIN (stem ELEMENTS. finis'
+  do @   = 1 to ELEMENTS.0
+    E    = ELEMENTS.@
+    EENV = substr(E,1,8)
+    ESYS = substr(E,10,8)
+    ESUB = substr(E,19,8)
+    ETYP = substr(E,28,8)
+    EELE = substr(E,37,8)
+    ESTG = substr(E,62,1)
+
+    if EENV = PENV & ESYS = PSYS & ESUB = PSUB & ESTG = PSTG then do
+      queue 'ARCHIVE ELE' EELE
+      queue '  FROM ENV' EENV 'SYS' ESYS 'SUB' ESUB
+      queue '       TYP' ETYP 'STAGE NUM' ESTG
+      queue '  TO DDNAME ARCHTAPE'
+      queue '  OPTIONS CCID "CLEANUP" COMMENT "DYNENV CLEANUP"'
+      queue '       OVERRIDE SIGNOUT .'
+    end
+  end
+end
+/*    queue '       BYPass ELEment DELete  '   */
+
+'execio * diskw FILEOUT ( finis'
+exit
+

@@ -1,0 +1,57 @@
+/* rexx     Check for empty DYNENVs                */
+/*          Build DELETE SCL for empty DYNENVs     */
+exitcode = 1
+
+/* read thru list of DYNENVs   */
+'EXECIO * DISKR DYNLIST (STEM dynenv.'
+do # = 1 to dynenv.0
+  denv  = substr(dynenv.#,14,8)
+  delm  = substr(dynenv.#,46,8)
+  match = N
+
+  call check_dynenv
+
+  if match = N then call build_SCL
+end
+
+/* write out all the list of DYNENVs with 0 elements  */
+'EXECIO * DISKW FILEOUT ( FINIS'
+exit(exitcode)
+
+
+/* read thru list of DYNENVs with at least 1 element  */
+check_dynenv:
+  'EXECIO * DISKR ELELIST (FINIS STEM elements.'
+  do @ = 1 to elements.0
+    eenv = substr(elements.@,15,8)
+    if denv = eenv then do
+      match = Y
+      return
+    end
+  end
+return
+
+
+/* create DELETE SCL for empty DYNENVs                  */
+build_SCL:
+  exitcode = 0
+  call get_DYNENV_list
+  queue 'DELETE ELEMENT ' denv
+  queue '  FROM ENV DEV SYS' tsys 'SUB' tsub 'TYP DYNENV STAGE 1'
+  queue '  OPTIONS CCID "CLEANUP" COMMENTS "DEL EMPTY DYNENV" '
+  queue '          OVERRIDE SIGNOUT .'
+return
+
+/* get the list of type DYNENV elements to find their system & subsys */
+get_DYNENV_list:
+  'EXECIO * DISKR DYNTYPE (FINIS STEM dyntype.'
+  do @ = 1 to dyntype.0
+    telm = substr(dyntype.@,39,8)
+    if delm = telm then do
+      tsys  = substr(dyntype.@,23,8)
+      tsub  = substr(dyntype.@,31,8)
+      return
+    end
+  end
+return
+

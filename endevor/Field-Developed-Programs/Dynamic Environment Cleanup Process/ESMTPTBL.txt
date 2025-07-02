@@ -1,0 +1,55 @@
+ESMTPTBL TITLE 'ENDEVOR SMTP EMAIL TABLE'
+***********************************************************************
+*  Copyright (C) 1986-2011 CA. All Rights Reserved.                   *
+*                                                                     *
+*  NAME:        ESMTPTBL                                              *
+*                                                                     *
+*  DESCRIPTION: ENDEVOR SMTP EMAIL ADDRESS TABLE.                     *
+*                                                                     *
+*  FUNCTION:    THIS TABLE CONTAINS MAINFRAME USER ID TO EMAIL        *
+*               ID INFORMATION.                                       *
+*                                                                     *
+*  INSTRUCTIONS:                                                      *
+*               1. TAILOR THIS TABLE AS NEEDED.                       *
+*                  FIRST $SMTP INVOCATION DEFINES:                    *
+*                     A.  SMTP HOST NAME                              *
+*                     B.  CORPORATE EMAIL DOMAIN NAME (@CA.COM)       *
+*                     C.  URL FOR ENDEVOR ECCM OR ENDEVOR WEBSTATION  *
+*                     D.  WHETHER THE ENDEVOR USER-ID SHOULD BE       *
+*                         USED AS AN EMAIL DESTINEE IF MFID NOT FOUND *
+*                  SECOND THRU N $SMTP INVOCATION DEFINES:            *
+*                     A.  MAINFRAME APPROVER GROUP ID OR TSO USERID   *
+*                     B.  ASSOCIATED EMAIL ADDRESS (NAME BEFORE THE @)*
+*                     C.  OPTIONAL DOMAIN (IF DIFFERENT FROM 1ST DEF) *
+*                     D.  OPTIONAL URL    (IF DIFFERENT FROM 1ST DEF) *
+*                                                                     *
+*               2. ASSEMBLE AND LINKEDIT THE TABLE USING THE MEMBER   *
+*                  BC1JTABL CONTAINED IN THE JCLLIB LIBRARY.          *
+*                                                                     *
+*  ASSEMBLY RETURN CODES:                                             *
+*                0 - NORMAL                                           *
+*               12 - PARAMETER ERROR, TABLE SHOULD NOT BE LINKED.     *
+*                    CONTACT ENDEVOR SUPPORT.                         *
+*                                                                     *
+***********************************************************************
+* FIRST INVOCATION - DEFINE "GLOBAL" VALUES
+*---------------------------------------------------------------------*
+         $ESMTP HOSTNAME=YourHostName,                                 X
+               DFTDOMAIN=YourDomain.com,                               X
+               DFTURL='http://endevor0/ccm1002/webpages/login.jsp',    X
+               DFTID=USERID           use userid@dtfdomain
+*                                     if userid not explicitly defined
+***********************************************************************
+* SUBSEQUENT INVOCATIONS - DEFINE APPROVER GROUP NAME OR USERIDS
+*---------------------------------------------------------------------*
+         $ESMTP MFID=IBMUSR9,EMAILID=User Name
+         $ESMTP MFID=IBMUSR8,EMAILID=User Name
+         $ESMTP MFID=IBMUSER,EMAILID=your.name
+         $ESMTP MFID=IBMUSR7,EMAILID=peer.name
+         $ESMTP MFID=userid2,EMAILID=email2.name,                      X
+               DOMAIN=diffdomain.com
+         $ESMTP MFID=userid3,EMAILID=email3.name
+***********************************************************************
+* LAST INVOCATION - END THE TABLE GENERATION
+*---------------------------------------------------------------------*
+         $ESMTP CALL=END

@@ -1,0 +1,318 @@
+//*        your jobcard here
+//*
+//*
+//JOBLIB DD DISP=SHR,DSN=Your.EndevorSCM.R19.CSIQAUTU
+//       DD DISP=SHR,DSN=Your.EndevorSCM.R19.CSIQAUTH
+//       DD DISP=SHR,DSN=Your.EndevorSCM.R19.CSIQLOAD
+//*
+//*-------------------------------------------------------------------
+//* Find Dynamic Enviornments with no activity:                      -
+//* -Email a warning when the DYNENV is near the purge date          -
+//* -Archive (to tape) all DYNENV elements past the purge date       -
+//* -For empty / past purge date DYNENVs, delete the Endevor         -
+//*      definitions and associated datasets.                        -
+//*                                                                  -
+//* Set WARN=xxxx    number of days with no activity; warning email  -
+//* Set PURGE=xxxx   number of days with no activity; purge DYNENV   -
+//*                                                                  -
+//* If Abend, restart from top                                       -
+//*-------------------------------------------------------------------
+//  SET WARN=40
+//  SET PURGE=55
+//*
+//*-------------------------------------------------------------------
+//* Get a list of all Environments                                   -
+//*-------------------------------------------------------------------
+//JSTEP05  EXEC PGM=NDVRC1,REGION=4M,PARM='BC1PCSV0'
+//BSTIPT01 DD *
+  LIST ENVIRONMENT *
+    TO DDNAME 'TABLE'
+    OPTIONS   NOCSV  RETURN ALL .
+//TABLE    DD DSN=&&ENVLIST,DISP=(NEW,PASS),
+//            DCB=(RECFM=FB,LRECL=1800,BLKSIZE=9000,DSORG=PS),
+//            SPACE=(CYL,(1,1)),UNIT=SYSDA
+//C1MSGS1  DD SYSOUT=*
+//BSTERR   DD SYSOUT=*
+//*
+//************************************************************
+//* Using SORT, remove regular (i.e. non-DYNENV) Environments*
+//************************************************************
+//JSTEP10  EXEC PGM=SORT
+//SYSOUT   DD DUMMY
+//SORTWK01 DD UNIT=SYSDA,SPACE=(CYL,(50,20))
+//SORTWK02 DD UNIT=SYSDA,SPACE=(CYL,(50,20))
+//SORTWK03 DD UNIT=SYSDA,SPACE=(CYL,(50,20))
+//SORTIN   DD DSN=&&ENVLIST,DISP=(OLD,DELETE)
+//SORTOUT  DD DSN=&&DYNLIST,DISP=(,PASS),SPACE=(CYL,(1,1),RLSE),
+//            UNIT=SYSDA,DCB=(RECFM=FB,LRECL=80,BLKSIZE=0)
+//SYSIN    DD *
+ SORT FIELDS=COPY
+ OMIT COND=(14,8,CH,EQ,C'DEV     ',OR,
+            14,8,CH,EQ,C'QA      ',OR,
+            14,8,CH,EQ,C'PROD    ',OR,
+            14,8,CH,EQ,C'ARC     ',OR,
+            14,8,CH,EQ,C'EMER    ',OR,
+            14,8,CH,EQ,C'ADM     ')
+ END
+//*
+//* OUTREC FIELDS=(C'     FROM ENV',X,14,8,X,
+//*                C'SYS * SUB * TYP * STAGE *',32X)
+//*
+//*-------------------------------------------------------------------
+//*  Build LIST ELEMENT CSV commands for the DYNENVs                 -
+//*  To debug: set //SYSTSPRT DD SYSOUT=*                            -
+//*-------------------------------------------------------------------
+//JSTEP15  EXEC PGM=IKJEFT01,PARM='%RCSVLIST'
+//SYSEXEC  DD DISP=SHR,DSN=Your.WorkDSN.WORK
+//         DD DISP=SHR,DSN=Your.EndevorSCM.R19.CSIQCLS0
+//SYSTSIN  DD DUMMY
+//SYSTSPRT DD DUMMY
+//FILEIN   DD DSN=&&DYNLIST,DISP=(OLD,PASS)
+//FILEOUT  DD DSN=&&BSTIPT01,DISP=(,PASS),SPACE=(CYL,(5,5),RLSE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=0),UNIT=SYSDA
+//*
+//*-------------------------------------------------------------------
+//* Find all elements in all DYNENVs                                 -
+//*-------------------------------------------------------------------
+//JSTEP20  EXEC PGM=NDVRC1,REGION=4M,
+//         PARM='BC1PCSV0'
+//BSTIPT01 DD DSN=&&BSTIPT01,DISP=(OLD,PASS)
+//TABLE    DD DSN=&&ELELIST1,DISP=(MOD,PASS),
+//            DCB=(RECFM=FB,LRECL=1800,BLKSIZE=9000,DSORG=PS),
+//            SPACE=(CYL,(50,50)),UNIT=SYSDA
+//C1MSGS1  DD SYSOUT=*
+//BSTERR   DD SYSOUT=*
+//*
+//*-------------------------------------------------------------------
+//*  PULL OUT ELEMENT INFO AND CONVERT LASTDATE TO JULIAN            -
+//*  To debug: set //SYSTSPRT DD SYSOUT=*                            -
+//*-------------------------------------------------------------------
+//JSTEP25  EXEC PGM=IKJEFT01,PARM='%RJULIAN'
+//SYSEXEC  DD DISP=SHR,DSN=Your.WorkDSN.WORK
+//         DD DISP=SHR,DSN=Your.EndevorSCM.R19.CSIQCLS0
+//SYSTSIN  DD DUMMY
+//SYSTSPRT DD DUMMY
+//FILEIN   DD DSN=&&ELELIST1,DISP=(OLD,DELETE)
+//FILEOUT  DD DSN=&&ELELIST2,DISP=(,PASS),SPACE=(CYL,(5,5),RLSE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=0),UNIT=SYSDA
+//*
+//*-------------------------------------------------------------------
+//*   SORT IN DYNENV & DESCENDING DATE ORDER                         -
+//*-------------------------------------------------------------------
+//JSTEP30  EXEC PGM=SORT
+//SYSOUT   DD SYSOUT=*
+//SORTWK01 DD UNIT=SYSDA,SPACE=(CYL,(50,20))
+//SORTWK02 DD UNIT=SYSDA,SPACE=(CYL,(50,20))
+//SORTWK03 DD UNIT=SYSDA,SPACE=(CYL,(50,20))
+//SORTIN   DD DSN=&&ELELIST2,DISP=(OLD,DELETE)
+//SORTOUT  DD DSN=&&SORTOUT,DISP=(,PASS),SPACE=(CYL,(5,5),RLSE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=0),UNIT=SYSDA
+//SYSIN    DD *
+ SORT FIELDS=(1,8,CH,A,46,8,CH,D)
+ END
+//*
+//*-------------------------------------------------------------------
+//* FIND ALL DYNENVS WHICH HAVEN'T BEEN UPDATED IN XX DAYS           -
+//*                                                                  -
+//* Return codes-                                                    -
+//*   RC=0 when warning email needed AND purge steps needed          -
+//*   RC=1 when warning email needed but no purge steps required     -
+//*   RC=2 when no warning email is required but purge steps needed  -
+//*   RC=3 when no warning email AND no purge steps                  -
+//* To debug: set //SYSTSPRT DD SYSOUT=*                             -
+//*-------------------------------------------------------------------
+//JSTEP35  EXEC PGM=IKJEFT01,PARM='%RUNUSED2 &WARN &PURGE'
+//SYSEXEC  DD DISP=SHR,DSN=Your.WorkDSN.WORK
+//         DD DISP=SHR,DSN=Your.EndevorSCM.R19.CSIQCLS0
+//SYSTSIN  DD DUMMY
+//SYSTSPRT DD DUMMY
+//NAMEFILE DD DSN=Your.WorkDSN.WORK(ESMTPTBL),DISP=SHR
+//FILEIN   DD DSN=&&SORTOUT,DISP=(OLD,PASS)
+//WARNLIST DD DSN=&&WARN,DISP=(,PASS),SPACE=(CYL,(5,5),RLSE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=0),UNIT=SYSDA
+//PURGELST DD DSN=&&PURGE,DISP=(,PASS),SPACE=(CYL,(5,5),RLSE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=0),UNIT=SYSDA
+//*
+//*-------------------------------------------------------------------
+//* Email report / Requirements:                                     -
+//*   1) SMTP or CSSMTP must be running to use this.                 -
+//*   2) Replace 'HELO USILxxxx' with your site's 'hostname' which   -
+//*      can be found in the SYSTCPD DD of the SMTP/CSSMTP task.     -
+//*   3) Note '55 days' is hard-coded in the email body. Update this -
+//*      to match the PURGE= set statement.                          -
+//*-------------------------------------------------------------------
+//@EMAIL IF (JSTEP35.RC EQ 0) OR (JSTEP35.RC EQ 1) THEN
+//JSTEP40  EXEC PGM=IEBGENER
+//SYSPRINT DD DUMMY
+//SYSUDUMP DD SYSOUT=*
+//SYSIN    DD DUMMY
+//SYSUT2   DD SYSOUT=(B,CSSMTP)
+//SYSUT1   DD *
+HELO USILxxxx
+MAIL FROM:<xxxx.Mainframe@YourDomain.com>
+RCPT TO:<Your.Name@YourDomain.com>
+DATA
+FROM: XXXX.Mainframe@YourDomain.com
+TO:Your.Name@YourDomain.com
+SUBJECT: DYNENV Inactivity Report
+MIME-VERSION: 1.0;
+CONTENT-TYPE: MULTIPART/MIXED;BOUNDARY="MIME"
+
+--MIME
+CONTENT-TYPE: TEXT/HTML
+CONTENT-DISPOSITION: INLINE
+
+<html>
+<body>
+<pre style="font: monospace">
+DYNENVs are <b>auto-deleted after 55 days of inactivity</b>. If your
+DYNENV is on this list and you need to keep it, please perform
+a GENERATE action on at least one of the elements in the DYNENV
+as soon as possible.
+</HTML>
+
+/*
+//         DD DSN=&&WARN,DISP=(OLD,DELETE)
+//         DD *
+--MIME
+//*
+//@EMAIL ENDIF
+//*
+//*-------------------------------------------------------------------
+//* Build ARCHIVE SCL for before purging DYNENVs                     -
+//* To debug: set //SYSTSPRT DD SYSOUT=*                             -
+//*-------------------------------------------------------------------
+//@PURGE IF (JSTEP35.RC EQ 0) OR (JSTEP35.RC EQ 2) THEN
+//JSTEP45  EXEC PGM=IKJEFT01,PARM='%RPURGE2'
+//SYSEXEC  DD DISP=SHR,DSN=Your.WorkDSN.WORK
+//         DD DISP=SHR,DSN=Your.EndevorSCM.R19.CSIQCLS0
+//SYSTSIN  DD DUMMY
+//SYSTSPRT DD DUMMY
+//FILEIN   DD DSN=&&SORTOUT,DISP=(OLD,DELETE)
+//PURGELST DD DSN=&&PURGE,DISP=(OLD,DELETE)
+//FILEOUT  DD DSN=&&ARCHIVE,DISP=(,PASS),SPACE=(CYL,(5,5),RLSE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=0),UNIT=SYSDA
+//*
+//*-------------------------------------------------------------------
+//* Archive all elements before purging DYNENV                       -
+//*-------------------------------------------------------------------
+//JSTEP50  EXEC PGM=NDVRC1,DYNAMNBR=1500,REGION=4096K,PARM='C1BM3000'
+//SORTWK01 DD UNIT=SYSDA,SPACE=(CYL,(1,2))
+//SORTWK02 DD UNIT=SYSDA,SPACE=(CYL,(1,2))
+//SORTWK03 DD UNIT=SYSDA,SPACE=(CYL,(1,2))
+//C1TPDD01 DD UNIT=SYSDA,SPACE=(CYL,5),DCB=(RECFM=VB,LRECL=260)
+//C1TPDD02 DD UNIT=SYSDA,SPACE=(CYL,5),DCB=(RECFM=VB,LRECL=260)
+//C1TPLSIN DD UNIT=SYSDA,SPACE=(CYL,5),DCB=(RECFM=FB,LRECL=80)
+//C1TPLSOU DD UNIT=SYSDA,SPACE=(CYL,5)
+//C1PLMSGS DD SYSOUT=*
+//C1MSGS1  DD SYSOUT=*
+//C1MSGS2  DD SYSOUT=*
+//C1PRINT  DD SYSOUT=*,DCB=(RECFM=FBA,LRECL=133)
+//SYSUDUMP DD SYSOUT=*
+//SYMDUMP  DD DUMMY
+//SYSOUT   DD SYSOUT=*
+//BSTIPT01 DD DSN=&&ARCHIVE,DISP=(OLD,PASS)
+//ARCHTAPE DD DSN=Your.WorkDSN.DYNENV.ARCHIVE(+1),
+//            DISP=(,CATLG,DELETE),UNIT=SYSDA,
+//            DCB=(RECFM=VB,LRECL=32756,BLKSIZE=32760),
+//            SPACE=(CYL,(5,5))
+//*
+//@PURGE ENDIF
+//*
+//*-------------------------------------------------------------------
+//*  NOTE                                                            -
+//*  NOTE   The remaining steps find & delete empty DYNENVs          -
+//*  NOTE                                                            -
+//*-------------------------------------------------------------------
+//*
+//*-------------------------------------------------------------------
+//* After Archive, rebuild list of DYNENVs with elements             -
+//*-------------------------------------------------------------------
+//JSTEP55  EXEC PGM=NDVRC1,REGION=4M,
+//         PARM='BC1PCSV0'
+//BSTIPT01 DD DSN=&&BSTIPT01,DISP=(OLD,DELETE)
+//TABLE    DD DSN=&&ELELIST3,DISP=(MOD,PASS),
+//            DCB=(RECFM=FB,LRECL=1800,BLKSIZE=9000,DSORG=PS),
+//            SPACE=(CYL,(50,50)),UNIT=SYSDA
+//C1MSGS1  DD SYSOUT=*
+//BSTERR   DD SYSOUT=*
+//*
+//*-------------------------------------------------------------------
+//* Find list of DYNENVs with at least 1 element                     -
+//*-------------------------------------------------------------------
+//JSTEP60  EXEC PGM=SORT
+//SYSOUT   DD DUMMY
+//SORTWK01 DD UNIT=SYSDA,SPACE=(CYL,(50,20))
+//SORTWK02 DD UNIT=SYSDA,SPACE=(CYL,(50,20))
+//SORTWK03 DD UNIT=SYSDA,SPACE=(CYL,(50,20))
+//SORTIN   DD DSN=&&ELELIST3,DISP=(OLD,DELETE)
+//SORTOUT  DD DSN=&&ELELIST4,DISP=(,PASS),SPACE=(CYL,(25,25),RLSE),
+//            DCB=(RECFM=FB,LRECL=1800,BLKSIZE=9000),UNIT=VIO
+//SYSIN    DD *
+ SORT FIELDS=(15,8,CH,A)
+ SUM  FIELDS=NONE
+ END
+//*
+//**********************************************************
+//*  Build list of type DYNENV elements                    *
+//**********************************************************
+//JSTEP65  EXEC PGM=NDVRC1,REGION=4M,PARM='BC1PCSV0'
+//BSTIPT01 DD *
+LIST ELEMENT *
+     FROM ENV DEV SYS * SUB * TYPE DYNENV STAGE 1
+     TO DDNAME 'TABLE'
+     OPTIONS   NOCSV  RETURN ALL .
+//TABLE    DD DSN=&&DYNTYPE,
+//            DCB=(RECFM=FB,LRECL=1800,BLKSIZE=9000,DSORG=PS),
+//            DISP=(NEW,PASS),
+//            SPACE=(CYL,(5,5),RLSE)
+//C1MSGS1  DD SYSOUT=*
+//BSTERR   DD SYSOUT=*
+//*
+//*-------------------------------------------------------------------
+//*  Compare DYNENV list against DYNENVs with elements to find       -
+//*  empty DYNENVs.   Create DELETE SCL for empty DYNENVs            -
+//*    RC=0 means DELETE SCL was created                             -
+//*    RC=1 means nothing to delete                                  -
+//*-------------------------------------------------------------------
+//JSTEP70  EXEC PGM=IKJEFT01,PARM='%RDYNCHK'
+//SYSEXEC  DD DISP=SHR,DSN=Your.WorkDSN.WORK
+//         DD DISP=SHR,DSN=Your.EndevorSCM.R19.CSIQCLS0
+//SYSTSIN  DD DUMMY
+//SYSTSPRT DD DUMMY
+//ELELIST  DD DSN=&&ELELIST4,DISP=(OLD,DELETE)
+//DYNLIST  DD DSN=&&DYNLIST,DISP=(OLD,DELETE)
+//DYNTYPE  DD DSN=&&DYNTYPE,DISP=(OLD,DELETE)
+//FILEOUT  DD DSN=&&EMPTY,DISP=(,PASS),SPACE=(CYL,(5,5),RLSE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=0),UNIT=SYSDA
+//*
+//*****************************************************************
+//* If DYNENVs need to be deleted (previous step RC = 0) then     *
+//* Execute the DELETE SCL to delete type DYNENV elements         *
+//* This invokes the DDYNENV  processor, which:                   *
+//*   1) deletes the DYNENV definitions from Endevor              *
+//*   2) all of the DYNENV  datasets                              *
+//*****************************************************************
+//@EMPTY IF (JSTEP70.RC = 0) THEN
+//JSTEP75  EXEC PGM=NDVRC1,DYNAMNBR=1500,REGION=4096K,
+//  PARM='C1BM3000'
+//SORTWK01 DD UNIT=SYSDA,SPACE=(CYL,(1,2))
+//SORTWK02 DD UNIT=SYSDA,SPACE=(CYL,(1,2))
+//SORTWK03 DD UNIT=SYSDA,SPACE=(CYL,(1,2))
+//C1TPDD01 DD UNIT=SYSDA,SPACE=(CYL,5),
+//            DCB=(RECFM=VB,LRECL=260)
+//C1TPDD02 DD UNIT=SYSDA,SPACE=(CYL,5),
+//            DCB=(RECFM=VB,LRECL=260)
+//C1TPLSIN DD UNIT=SYSDA,SPACE=(CYL,5),
+//            DCB=(RECFM=FB,LRECL=80)
+//C1TPLSOU DD UNIT=SYSDA,SPACE=(CYL,5)
+//C1PLMSGS DD SYSOUT=*
+//C1MSGS1  DD SYSOUT=*
+//C1MSGS2  DD SYSOUT=*
+//C1PRINT  DD SYSOUT=*,DCB=(RECFM=FBA,LRECL=133)
+//SYSUDUMP DD SYSOUT=*
+//SYMDUMP  DD DUMMY
+//SYSOUT   DD SYSOUT=*
+//BSTIPT01 DD DSN=&&EMPTY,DISP=(OLD,DELETE)
+//@EMPTY ENDIF
+//*

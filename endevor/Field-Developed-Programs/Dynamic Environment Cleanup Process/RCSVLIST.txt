@@ -1,0 +1,16 @@
+/*****************************************************************\
+* Rexx routine to create LIST ELEMENT CSV commands                *
+\*****************************************************************/
+
+'execio * diskr FILEIN  (stem Table.'
+
+do # = 1 to Table.0
+   xxx  = substr(Table.#,14,8)
+   queue 'LIST ELEMENT * '
+   queue '     FROM ENV' xxx 'SYS * SUB * TYP * STAGE *'
+   queue '     TO DDNAME 'TABLE' '
+   queue '     OPTIONS NOCSV.   '
+end
+
+'EXECIO * DISKW FILEOUT ( FINIS'
+exit

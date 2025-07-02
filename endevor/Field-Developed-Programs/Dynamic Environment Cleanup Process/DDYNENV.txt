@@ -1,0 +1,140 @@
+//*-------------------------------------------------------------------*
+//* DDYNENV: Deletes a DYNAMIC ENVIRONMENT, its MCFs, and datasets.   *
+//*-------------------------------------------------------------------*
+//DDYNENV PROC AAA=,
+//        PFX='Your.Endevor.&C1ELEMENT',
+//        MCF1='&PFX...DEV1.MCF',
+//        MCF2='&PFX...DEV2.MCF',
+//        TEMPFILE='Your.Endevor.&C1USERID..TEMP.DYNDEL',
+//        JOBNAME='//&C1USERID.A',
+//        JOBACCT='(0000)',
+//        JOBC=A,
+//        MSGC=X,
+//        ZZZ=
+//*
+//**********************************************************
+//* DELETE THE ENVIRONMENT.                                *
+//* If elements exist, this will fail on RC 12 (by design) *
+//**********************************************************
+//ADMIN    EXEC PGM=ENBE1000,ALTID=Y,MAXRC=4,
+//         PARM='MSGS1(CUSTMSG1),MSGS2(CUSTMSG2),SCLIN(CUSTSCL)'
+//CUSTMSG1 DD SYSOUT=*
+//CUSTMSG2 DD SYSOUT=*
+//CUSTSCL  DD *
+   DELETE ENVIRONMENT '&C1ELEMENT' .
+//*
+//*********************************************************
+//* If no elements (RC=4 in prev step) then continue      *
+//*********************************************************
+//IFGOOD IF (ADMIN.RC LE 4) THEN
+//*
+//*********************************************************************
+//* Delete the DYNENV listing                                         *
+//*********************************************************************
+//DELACMOP EXEC PGM=CONDELE,PARM='*COMPONENTS'
+//*
+//*********************************************************************
+//* Delete work file                                                  *
+//*********************************************************************
+//CLEANUP  EXEC PGM=IEFBR14
+//DD01     DD DSN=&TEMPFILE,
+//            DISP=(MOD,DELETE),SPACE=(TRK,1)
+//*
+//*********************************************************************
+//* List files belonging to the dynamic environment                   *
+//*********************************************************************
+//LISTCAT  EXEC PGM=IDCAMS
+//SYSPRINT DD DSN=&&LISTCAT,DISP=(,PASS),
+//            SPACE=(TRK,(5,10)),
+//            RECFM=FB,LRECL=150,BLKSIZE=30000
+//SYSIN    DD *
+  LISTCAT LEVEL('&PFX') NAME
+/*
+//*********************************************************************
+//* TableTool- Build Delete statements for every DYNENV dataset       *
+//*********************************************************************
+//TBLTOOL  EXEC PGM=IRXJCL,PARM='ENBPIU00 M NONVSAM'
+//SYSEXEC  DD DISP=SHR,DSN=Your.Endevor.CSIQCLS0
+//TABLE    DD DSN=&&LISTCAT,DISP=(OLD,DELETE)
+//POSITION DD *
+  literal       02 08
+  SubsDataset   18 61
+//MODEL    DD *
+ DELETE '&SubsDataset'
+//OPTIONS  DD DUMMY
+//SYSPRINT DD SYSOUT=*
+//SYSTSPRT DD SYSOUT=*
+//TBLOUT   DD DSN=&TEMPFILE,DISP=(,CATLG,DELETE),
+//            SPACE=(TRK,(5,5)),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=8000,DSORG=PS)
+//*
+//*********************************************************************
+//* Submit job to reader to delete the DYNENV datasets                *
+//*********************************************************************
+//INTRDR   EXEC PGM=IEBGENER
+//SYSPRINT DD DUMMY
+//SYSUT2   DD SYSOUT=(A,INTRDR),DCB=BLKSIZE=8000
+//SYSIN    DD DUMMY
+//SYSUT1   DD DATA,DLM='@@'
+&JOBNAME JOB '&JOBACCT','DEL &C1ELEMENT',
+//  CLASS=&JOBC,MSGCLASS=&MSGC,NOTIFY=&C1USERID
+/*JOBPARM SYSAFF=*
+//*
+//********************************************************
+//* Delete the DYNENV VSAM MCFs                          *
+//* This step will wait for exclusive on the MCFs        *
+//********************************************************
+//DELMCF   EXEC PGM=IDCAMS
+//INDD1    DD DISP=(OLD),DSN=&MCF1
+//INDD2    DD DISP=(OLD),DSN=&MCF2
+//SYSPRINT DD SYSOUT=*
+//SYSIN    DD *
+ DELETE '&MCF1' -
+   PURGE ERASE
+ DELETE '&MCF2' -
+   PURGE ERASE
+/*
+//********************************************************
+//* Delete all remaining DYNENV datasets                 *
+//********************************************************
+//DELFILES EXEC PGM=IKJEFT1B
+//SYSTSIN  DD DISP=SHR,DSN=&TEMPFILE
+//SYSTSPRT DD SYSOUT=*
+//*
+//********************************************************
+//* Delete work file                                     *
+//********************************************************
+//CLEANUP  EXEC PGM=IEFBR14
+//DD01     DD DSN=&TEMPFILE,
+//            DISP=(MOD,DELETE),SPACE=(TRK,1)
+@@
+//*-------------------------------------------------------------------*
+//*      ELSE elements exist, issue errors & messages                 *
+//*-------------------------------------------------------------------*
+//IFGOOD ELSE
+//*
+//*-------------------------------------------------------------------*
+//*  FAIL IF ELEMENTS STILL EXIST                                     *
+//*-------------------------------------------------------------------*
+//SETMAXCC EXEC PGM=IDCAMS,MAXRC=4
+//SYSPRINT DD DUMMY
+//SYSIN    DD *
+  SET MAXCC = 12
+/*
+//*-------------------------------------------------------------------*
+//*  Put out error message.
+//*-------------------------------------------------------------------*
+//ERRMSG   EXEC PGM=IEBGENER
+//SYSPRINT DD  DUMMY
+//SYSUT2   DD  SYSOUT=*
+//SYSIN    DD  DUMMY
+//SYSUT1   DD  *
+ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+ **ERROR** DYNENV &C1ELEMENT has elements
+
+ To delete a DYNENV, you must first delete all elements!
+ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/*
+//IFGOOD ENDIF
+//*

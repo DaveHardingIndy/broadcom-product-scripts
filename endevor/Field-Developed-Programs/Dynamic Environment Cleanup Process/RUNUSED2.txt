@@ -1,0 +1,73 @@
+/* REXX   Find DYNENVs with no activity for XX days */
+
+arg WARN_DAYS PURGE_DAYS
+WORKD  = date("S")
+DDD    = right(date('D',WORKD,'S'),3,'0')
+YYYY   = substr(WORKD,1,4)
+TODAY  = YYYY||DDD
+HEAD1  = 'DYNEVN   System   Subsys   S  Last Update Days Userid  Email'
+HEAD2  = '-------- -------- -------- -  ----------- ---- ------- -----'
+OLDENV = ' '
+EMAIL  = N
+PURGE  = N
+
+'execio * diskr FILEIN (stem TABLE.'
+do # = 1 to TABLE.0
+  A    = TABLE.#
+  ENV  = substr(A,1,8)
+  SYS  = substr(A,10,8)
+  SUB  = substr(A,19,8)
+  LAST = substr(A,46,8)
+  LLLL = substr(A,46,4)
+  USER = substr(A,54,7)
+  STG  = substr(A,62,1)
+
+  if ENV   > OLDENV then do
+    OLDENV = ENV
+    Z      = (YYYY - LLLL) * 635
+    X      = (TODAY - Z - LAST)
+    if X  >= PURGE_DAYS then call Purge_Process
+    if X  >= WARN_DAYS  then call Warning_email
+  end
+end
+if EMAIL = Y & PURGE = Y then exit(0)
+if EMAIL = Y & PURGE = N then exit(1)
+if EMAIL = N & PURGE = Y then exit(2)
+if EMAIL = N & PURGE = N then exit(3)
+
+name_lookup:
+  UNAME = ' '
+  'execio * diskr NAMEFILE (finis stem NAMES.'
+  do @ = 1 to NAMES.0
+    H    = NAMES.@
+    UID  = substr(H,22,7)
+    NAME = strip(substr(H,38,20)) || '@yoursite.com'
+    if USER = UID then UNAME = NAME
+  end
+return
+
+/* */
+Purge_Process:
+  PURGE = Y
+/*X     = 0 */
+  queue ENV SYS SUB STG
+  'execio * diskw PURGELST ';
+return
+
+/* */
+Warning_email:
+  if EMAIL = N then do
+    queue HEAD1
+    queue HEAD2
+    EMAIL  = Y
+  end
+  LAST  = substr(LAST,3,5)
+  LAST  = date('N',LAST,'J')
+  LAST  = right(LAST,11)
+  X     = right(X,4)
+  call name_lookup
+  LINE  = ENV SYS SUB STG ' ' || LAST X USER UNAME
+  queue LINE
+  'execio * diskw WARNLIST ';
+return
+
